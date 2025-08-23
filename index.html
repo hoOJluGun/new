@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Telegram Авторизация</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root { --yellow:#FFD700; --dark:#111; --blue:#001f3f; }
+    body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:linear-gradient(to top,var(--blue),var(--dark));color:#f0f0f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .wrap{background:#222;padding:28px;border-radius:12px;box-shadow:0 0 18px var(--yellow);max-width:420px;width:100%;text-align:center}
+    h1{margin:0 0 8px;font-size:1.7rem}
+    p{margin:0 0 16px}
+    .btn{background:var(--yellow);color:#111;border:0;border-radius:10px;padding:12px 20px;font-weight:700;cursor:pointer;box-shadow:0 0 10px var(--yellow)}
+    .btn:hover{transform:scale(1.03)}
+    #loader{display:none;margin:16px auto;border:6px solid #333;border-top:6px solid var(--yellow);border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    #user{display:none;margin-top:14px}
+    #user img{width:80px;height:80px;border-radius:50%;box-shadow:0 0 10px var(--yellow);object-fit:cover}
+    #err{display:none;margin-top:12px;color:#ffb3b3;font-size:.95rem;white-space:pre-wrap}
+    .muted{opacity:.8;font-size:.9rem;margin-top:12px}
+    a{color:var(--yellow)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Вход через Telegram</h1>
+    <p>Нажмите ниже и подтвердите вход в виджете Telegram.</p>
+
+    <button class="btn" id="loginBtn">Войти через Telegram</button>
+    <div id="loader"></div>
+
+    <div id="user">
+      <img id="avatar" alt="avatar">
+      <div id="fullname"></div>
+      <button class="btn" id="logoutBtn" style="margin-top:8px">Выйти</button>
+    </div>
+
+    <div id="err"></div>
+    <div class="muted">Учебный пример. Данные не храним.</div>
+  </div>
+
+  <script>
+    const errBox = document.getElementById('err');
+    function showErr(msg){ errBox.style.display='block'; errBox.textContent = msg; }
+    function hideErr(){ errBox.style.display='none'; errBox.textContent=''; }
+    function getCookie(name){ const m=document.cookie.match(new RegExp('(?:^|; )'+name.replace(/([.$?*|{}()\[\]\\\/\+^])/g,'\\$1')+'=([^;]*)')); return m?decodeURIComponent(m[1]):undefined }
+    function setVisible(el, show){ el.style.display = show ? 'block' : 'none'; }
+
+    async function call(fnPath, method='POST'){
+      try{
+        const res = await fetch(fnPath, { method, headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': getCookie('csrf')||'' } });
+        const data = await res.json().catch(()=>({}));
+        if(!res.ok){ throw new Error((data && data.error) || (res.status+' '+res.statusText)); }
+        return data;
+      }catch(e){ showErr('Ошибка запроса '+fnPath+': '+e.message); throw e; }
+    }
+
+    function showUser(u){
+      document.getElementById('avatar').src = u.photo_url||'';
+      document.getElementById('fullname').textContent = (u.first_name||'')+' '+(u.last_name||'');
+      setVisible(document.getElementById('user'), true);
+      setVisible(document.getElementById('loader'), false);
+    }
+
+    async function checkSession(){
+      hideErr();
+      try{
+        const data = await call('/.netlify/functions/verify');
+        if(data.valid) showUser(data.user);
+      }catch(e){ /* already shown */ }
+    }
+
+    async function logout(){
+      hideErr();
+      try{ await call('/.netlify/functions/logout'); location.reload(); }catch(e){} 
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+
+    function startTelegram(){
+      hideErr();
+      setVisible(document.getElementById('loader'), true);
+
+      window.TelegramLoginWidget = {
+        dataOnauth: async function(user){
+          try{
+            const qs = new URLSearchParams(user).toString();
+            const res = await fetch('/.netlify/functions/auth?'+qs);
+            const data = await res.json();
+            if(data && data.valid){ showUser(data.user); }
+            else { setVisible(document.getElementById('loader'), false); showErr('auth: '+(data && (data.error||JSON.stringify(data)))); }
+          }catch(e){
+            setVisible(document.getElementById('loader'), false);
+            showErr('auth запрос упал: '+e.message);
+          }
+        }
+      };
+
+      const s = document.createElement('script');
+      s.src = 'https://telegram.org/js/telegram-widget.js?22';
+      s.setAttribute('data-telegram-login','REPLACE_WITH_YOUR_BOT'); // <-- ИМЯ БОТА без @
+      s.setAttribute('data-size','large');
+      s.setAttribute('data-userpic','false');
+      s.setAttribute('data-request-access','write');
+      s.setAttribute('data-onauth','TelegramLoginWidget.dataOnauth');
+      document.body.appendChild(s);
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', startTelegram);
+    checkSession();
+  </script>
+</body>
+</html>
